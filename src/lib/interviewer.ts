@@ -21,7 +21,9 @@ function interviewerPrompt(job: Job, qNumber: number) {
   const isFollowup = FORCED_FOLLOWUPS.has(qNumber);
   const followup = isFollowup
     ? `This question MUST be a follow-up — quote a phrase from the candidate's last answer and dig into it. Do not change topics. Do not pull from the question pack.`
-    : `This question introduces a new topic. Prefer drawing from the question pack below; you may rephrase or sharpen, but don't ignore the pack unless nothing in it fits the unexplored ground. Don't repeat topics already covered.`;
+    : `This question introduces a new topic. Prefer drawing from the question pack below; you may rephrase or sharpen, but don't ignore the pack unless nothing in it fits the unexplored ground. Don't repeat topics already covered.
+
+Important: if the candidate's previous answer was clearly thin or unconfident — for example they said they didn't know, gave a one-liner, or were off-topic — don't move on. Re-approach the same area from a different angle (a more specific version, an easier framing, or "what would you consider if you had to make a call"). Treat moving to a brand-new pack question as wasteful when the prior topic wasn't actually engaged with.`;
 
   return `You are conducting a live job interview for: "${job.title}".
 
@@ -161,11 +163,13 @@ export async function generateNextQuestion(
     messages.push({ role: "user", content: "(no answer given) Move to the next question. Reply with the JSON only." });
   }
 
+  const system = interviewerPrompt(job, qNumber);
+
   const text = textOf(
     await callClaude({
       model: MODEL,
       max_tokens: 1500,
-      system: interviewerPrompt(job, qNumber),
+      system,
       messages,
     }),
   );
@@ -177,7 +181,7 @@ export async function generateNextQuestion(
       await callClaude({
         model: MODEL,
         max_tokens: 1500,
-        system: interviewerPrompt(job, qNumber),
+        system,
         messages: [
           ...messages,
           { role: "user", content: "Reply with the JSON object only — start with { and end with }." },

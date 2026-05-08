@@ -1,0 +1,7 @@
+echo "→ running tests before commit..."
+npm test --silent || {
+  echo ""
+  echo "✗ tests failed. commit aborted."
+  echo "  fix the failures or use 'git commit --no-verify' if you really must."
+  exit 1
+}

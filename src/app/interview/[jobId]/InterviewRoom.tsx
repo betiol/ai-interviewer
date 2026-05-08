@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Job, Session, Turn } from "@/lib/types";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
+import { useTextToSpeech } from "@/lib/useTextToSpeech";
 import { newSessionId, saveSession } from "@/lib/sessionStore";
 import DecisionPanel from "./DecisionPanel";
 
@@ -28,12 +29,21 @@ export default function InterviewRoom({ job }: Props) {
       setPendingAnswer((prev) => (prev ? prev + " " : "") + text),
   });
 
+  const tts = useTextToSpeech();
+  const lastSpokenRef = useRef<string>("");
+
   const startedRef = useRef(false);
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
     void requestNext([], undefined);
   }, []);
+
+  useEffect(() => {
+    if (!currentQuestion || currentQuestion === lastSpokenRef.current) return;
+    lastSpokenRef.current = currentQuestion;
+    tts.speak(currentQuestion);
+  }, [currentQuestion, tts]);
 
   function persist(updates: Partial<Session>) {
     saveSession({
@@ -164,9 +174,44 @@ export default function InterviewRoom({ job }: Props) {
         <div className="min-w-0">
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 mb-6 min-h-[120px]">
-        <p className="text-xs uppercase tracking-wider text-zinc-500 mb-2">
-          Interviewer
-        </p>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <p className="text-xs uppercase tracking-wider text-zinc-500">
+              Interviewer
+            </p>
+            {tts.speaking && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-300">
+                <span className="flex items-end gap-0.5 h-3">
+                  <span className="w-0.5 h-2 bg-amber-300 animate-pulse" style={{ animationDelay: "0ms" }} />
+                  <span className="w-0.5 h-3 bg-amber-300 animate-pulse" style={{ animationDelay: "150ms" }} />
+                  <span className="w-0.5 h-1.5 bg-amber-300 animate-pulse" style={{ animationDelay: "300ms" }} />
+                </span>
+                speaking
+              </span>
+            )}
+          </div>
+          {tts.supported && (
+            <button
+              type="button"
+              onClick={() => {
+                if (tts.speaking) tts.stop();
+                tts.toggleMute();
+              }}
+              aria-label={tts.muted ? "Unmute interviewer" : "Mute interviewer"}
+              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 hover:text-zinc-200 transition-colors"
+            >
+              {tts.muted ? (
+                <>
+                  <SpeakerOffIcon /> muted
+                </>
+              ) : (
+                <>
+                  <SpeakerOnIcon /> voice on
+                </>
+              )}
+            </button>
+          )}
+        </div>
         <p className="text-lg text-white leading-relaxed">
           {loading && !currentQuestion
             ? "Preparing your first question…"
@@ -179,9 +224,14 @@ export default function InterviewRoom({ job }: Props) {
           <div className="flex flex-col items-center gap-4 py-2">
             <button
               type="button"
-              onClick={() =>
-                speech.listening ? speech.stop() : speech.start()
-              }
+              onClick={() => {
+                if (speech.listening) {
+                  speech.stop();
+                } else {
+                  if (tts.speaking) tts.stop();
+                  speech.start();
+                }
+              }}
               disabled={loading}
               aria-label={speech.listening ? "Stop recording" : "Start recording"}
               className={`relative inline-flex items-center justify-center h-24 w-24 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -214,6 +264,15 @@ export default function InterviewRoom({ job }: Props) {
                 ? "Tap mic again to add more, or submit below"
                 : "Tap to start speaking"}
             </p>
+            {speech.error && (
+              <p className="text-xs text-red-400">
+                Mic error: {speech.error}
+                {speech.error === "not-allowed" &&
+                  " — check site permissions and reload."}
+                {speech.error === "no-speech" &&
+                  " — no speech detected, try again."}
+              </p>
+            )}
             {pendingAnswer && (
               <div className="w-full rounded-lg bg-zinc-950/50 border border-zinc-800 p-3 text-sm text-zinc-200 whitespace-pre-wrap">
                 {pendingAnswer}
@@ -295,5 +354,45 @@ export default function InterviewRoom({ job }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+function SpeakerOnIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+}
+
+function SpeakerOffIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="22" y1="9" x2="16" y2="15" />
+      <line x1="16" y1="9" x2="22" y2="15" />
+    </svg>
   );
 }

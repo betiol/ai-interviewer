@@ -4,104 +4,76 @@ import type { Job, Turn, Evaluation, InterviewerSignals } from "./types";
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
 const FALLBACK_MODEL = process.env.ANTHROPIC_FALLBACK_MODEL ?? "claude-haiku-4-5";
 const EVAL_MODEL = process.env.ANTHROPIC_EVAL_MODEL ?? MODEL;
+
 export const TARGET_QUESTIONS = 6;
+const FORCED_FOLLOWUPS = new Set([3, 5]);
 
 let _client: Anthropic | null = null;
-function client(): Anthropic {
+function client() {
   if (!_client) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not set");
-    }
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
     _client = new Anthropic();
   }
   return _client;
 }
 
-function interviewerSystemPrompt(job: Job, questionNumber: number): string {
-  const FOLLOWUP_QS = new Set([3, 5]);
-  const isFollowup = FOLLOWUP_QS.has(questionNumber);
+function interviewerPrompt(job: Job, qNumber: number) {
+  const followup = FORCED_FOLLOWUPS.has(qNumber)
+    ? `This question MUST be a follow-up — quote a phrase from the candidate's last answer and dig into it. Do not change topics.`
+    : `This question can introduce a new topic. Move forward, don't repeat ground.`;
 
-  const followupRule = isFollowup
-    ? `THIS turn (#${questionNumber}) MUST be a follow-up: quote or paraphrase a specific phrase from the candidate's most recent answer, and dig into one concrete claim, decision, or gap they just mentioned. Do not change topics.`
-    : `This turn can introduce a new topic. Move forward — don't repeat ground already covered.`;
+  return `You are conducting a live job interview for: "${job.title}".
 
-  return `You are conducting a live job interview. You ARE the interviewer — never break character.
+Focus areas:
+${job.focusAreas.map((f) => `- ${f}`).join("\n")}
 
-# OUTPUT FORMAT (MANDATORY)
+Context: ${job.longDescription}
 
-Your entire response MUST be a single JSON object. No prose before or after. No markdown code fences. Start with { and end with }.
+Question ${qNumber} of ${TARGET_QUESTIONS}.
 
-Schema:
+Reply with a single JSON object, no prose around it, no fences:
 {
-  "question": string,                  // the question text you'll say next (see Question rules below)
+  "question": "the question you'll say next",
   "signals": {
-    "skillsDemonstrated": [string],    // skills the candidate has shown so far (cumulative; empty on Q1). Short noun phrases.
-    "topicsCovered": [string],         // topics covered so far (cumulative; empty on Q1). Short noun phrases.
-    "gaps": [string],                  // important areas you still want to probe but haven't yet. Short noun phrases.
-    "rationale": string                // 1-2 sentences: why you chose THIS question now. Reference the candidate's answer if it's a follow-up.
+    "skillsDemonstrated": ["..."],
+    "topicsCovered": ["..."],
+    "gaps": ["..."],
+    "rationale": "1-2 sentences on why you chose this question"
   }
 }
 
-Use proper JSON: double quotes, escape internal quotes with \\", no trailing commas. Keep arrays short — max ~5 items each.
-
-# CONTEXT
-
-Role being interviewed for: "${job.title}"
-
-Role focus areas:
-${job.focusAreas.map((f) => `- ${f}`).join("\n")}
-
-Role context: ${job.longDescription}
-
-You will ask exactly ${TARGET_QUESTIONS} questions in this interview. This is question #${questionNumber} of ${TARGET_QUESTIONS}.
-
-# RULES FOR THE "question" FIELD
-
-- Speak DIRECTLY to the candidate. You ARE the interviewer, not an AI helping someone run an interview.
-- No preamble ("Great answer", "Thanks", "I see"), no acknowledgements, no meta-commentary, no offering choices, no "would you like…", no numbering, no quotes wrapping.
-- NEVER refer to "the interview" or "questions" or "the candidate" or "your next response" — those are meta.
-- If the candidate's answer was short, vague, off-topic, or unclear, just ask the next question naturally. Do NOT ask the candidate what they want to do.
-- Exactly ONE question. No multi-part questions joined with "and" or "also".
-- 1 to 3 sentences max. Conversational tone.
-- First question must be a meaty, role-specific opener — never "tell me about yourself".
-- Don't ask trivia. Probe judgment, trade-offs, real experience.
-- ${followupRule}
-
-Make the signals concrete and grounded in the transcript so far.`;
+Rules for the question:
+- You ARE the interviewer talking to the candidate. Don't say "the interview", "the candidate", or "would you like".
+- One question only. 1-3 sentences. Conversational.
+- ${followup}
+- The first question is a meaty role-specific opener, not "tell me about yourself".`;
 }
 
-function evaluationSystemPrompt(job: Job): string {
-  return `You are a hiring manager reviewing a completed interview transcript for the role "${job.title}".
+function evalPrompt(job: Job) {
+  return `You are a hiring manager scoring this interview for "${job.title}".
 
-Produce a structured evaluation as a single JSON object with this exact shape:
+Reply with a single JSON object, no fences:
 {
-  "strengths": [string, ...],     // 2-4 concrete strengths grounded in transcript quotes/topics
-  "concerns": [string, ...],      // 1-3 honest concerns or gaps
-  "overallScore": number,         // 1-10 integer, calibrated: 5 = average, 7 = strong, 9 = exceptional
-  "summary": string               // 2-3 sentence hiring recommendation
+  "strengths": ["2-4 concrete strengths from the transcript"],
+  "concerns": ["1-3 honest concerns or gaps"],
+  "overallScore": 1-10,
+  "summary": "2-3 sentence hiring recommendation"
 }
 
-Rules:
-- Output ONLY the JSON object. No markdown fences, no commentary.
-- Ground every point in what the candidate actually said.
-- Be honest. If answers were thin, say so explicitly and score accordingly (3-5).`;
+Be honest. If answers were thin, say so and score 3-5.`;
 }
 
 function turnsToMessages(turns: Turn[]): Anthropic.MessageParam[] {
-  const msgs: Anthropic.MessageParam[] = [];
-  for (const t of turns) {
-    const text = t.text?.trim();
-    if (!text) continue;
-    msgs.push({
-      role: t.role === "interviewer" ? "assistant" : "user",
-      content: text,
-    });
-  }
-  return msgs;
+  return turns
+    .filter((t) => t.text?.trim())
+    .map((t) => ({
+      role: t.role === "interviewer" ? ("assistant" as const) : ("user" as const),
+      content: t.text.trim(),
+    }));
 }
 
-function extractText(message: Anthropic.Message): string {
-  return message.content
+function textOf(msg: Anthropic.Message) {
+  return msg.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("")
@@ -115,220 +87,106 @@ const EMPTY_SIGNALS: InterviewerSignals = {
   rationale: "",
 };
 
-function parseInterviewerJson(
-  raw: string,
-  prefilled: boolean,
-): { question: string; signals: InterviewerSignals } {
-  // If we used prefill, the model's response starts mid-JSON — re-attach the prefix.
-  const restored = prefilled ? `{"question": "${raw}` : raw;
-
-  const stripped = restored
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
-
-  // Try to slice out a balanced JSON object
-  let jsonText = stripped;
-  const firstBrace = stripped.indexOf("{");
-  const lastBrace = stripped.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    jsonText = stripped.slice(firstBrace, lastBrace + 1);
+function parseTurn(raw: string) {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start === -1 || end <= start) {
+    throw new Error(`Interviewer didn't return JSON: ${raw.slice(0, 120)}`);
   }
-
-  try {
-    const parsed = JSON.parse(jsonText) as {
-      question?: unknown;
-      signals?: Partial<InterviewerSignals>;
-    };
-    if (typeof parsed.question === "string" && parsed.question.trim()) {
-      const s = parsed.signals ?? {};
-      return {
-        question: parsed.question.trim(),
-        signals: {
-          skillsDemonstrated: Array.isArray(s.skillsDemonstrated)
-            ? s.skillsDemonstrated.filter((x): x is string => typeof x === "string")
-            : [],
-          topicsCovered: Array.isArray(s.topicsCovered)
-            ? s.topicsCovered.filter((x): x is string => typeof x === "string")
-            : [],
-          gaps: Array.isArray(s.gaps)
-            ? s.gaps.filter((x): x is string => typeof x === "string")
-            : [],
-          rationale: typeof s.rationale === "string" ? s.rationale : "",
-        },
-      };
-    }
-  } catch {
-    // Fall through to recovery
+  const parsed = JSON.parse(raw.slice(start, end + 1)) as {
+    question?: string;
+    signals?: Partial<InterviewerSignals>;
+  };
+  if (typeof parsed.question !== "string" || !parsed.question.trim()) {
+    throw new Error("Missing 'question' in interviewer response");
   }
-
-  // Recovery: try to extract just the question string from broken JSON
-  // Match: "question": "...." up to the next unescaped quote
-  const m = jsonText.match(/"question"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (m && m[1]) {
-    const q = m[1].replace(/\\"/g, '"').replace(/\\n/g, " ").trim();
-    if (q) return { question: q, signals: { ...EMPTY_SIGNALS } };
-  }
-
-  // Last resort: treat the raw output as the question itself
-  // This keeps the interview alive even if the model totally drops JSON.
-  const fallback = raw.replace(/^[\s`{}\[\]"]+|[\s`{}\[\]"]+$/g, "").trim();
-  if (fallback.length >= 10) {
-    return { question: fallback, signals: { ...EMPTY_SIGNALS } };
-  }
-
-  throw new Error(`Interviewer returned unusable output: ${raw.slice(0, 200)}`);
+  return {
+    question: parsed.question.trim(),
+    signals: { ...EMPTY_SIGNALS, ...(parsed.signals ?? {}) },
+  };
 }
 
-function isOverloaded(err: unknown): boolean {
+function isOverloaded(err: unknown) {
   if (err instanceof Anthropic.APIError) {
-    return err.status === 529 || err.status === 429 || err.status === 503;
+    return [429, 503, 529].includes(err.status ?? 0);
   }
-  const msg = err instanceof Error ? err.message : String(err);
-  return /overloaded|529|rate[_ ]?limit/i.test(msg);
+  return /overloaded|529|rate[_ ]?limit/i.test(String(err));
 }
 
-async function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function createMessageWithFallback(
-  args: Anthropic.MessageCreateParamsNonStreaming,
-): Promise<Anthropic.Message> {
-  // First try the primary model with one quick retry on overload.
+async function callClaude(args: Anthropic.MessageCreateParamsNonStreaming) {
   try {
     return await client().messages.create(args);
   } catch (err) {
-    if (!isOverloaded(err)) throw err;
-    await sleep(1500);
-    try {
-      return await client().messages.create(args);
-    } catch (err2) {
-      if (!isOverloaded(err2) || args.model === FALLBACK_MODEL) throw err2;
-      // Final attempt: switch to fallback model
-      return await client().messages.create({
-        ...args,
-        model: FALLBACK_MODEL,
-      });
-    }
+    if (!isOverloaded(err) || args.model === FALLBACK_MODEL) throw err;
+    return await client().messages.create({ ...args, model: FALLBACK_MODEL });
   }
-}
-
-async function callInterviewer(
-  job: Job,
-  messages: Anthropic.MessageParam[],
-  upcomingQuestionNumber: number,
-  reminder?: string,
-): Promise<string> {
-  const finalMessages = reminder
-    ? [
-        ...messages,
-        {
-          role: "user" as const,
-          content: reminder,
-        },
-      ]
-    : messages;
-
-  const response = await createMessageWithFallback({
-    model: MODEL,
-    max_tokens: 1500,
-    system: interviewerSystemPrompt(job, upcomingQuestionNumber),
-    messages: finalMessages,
-  });
-  return extractText(response);
 }
 
 export async function generateNextQuestion(
   job: Job,
   turns: Turn[],
-  upcomingQuestionNumber: number,
-): Promise<{ question: string; signals: InterviewerSignals }> {
+  qNumber: number,
+) {
   const messages = turnsToMessages(turns);
-
   if (messages.length === 0) {
-    messages.push({
-      role: "user",
-      content: `[The candidate is ready. Ask your first question now. Reply with the JSON object only.]`,
-    });
+    messages.push({ role: "user", content: "Begin the interview now. Reply with the JSON only." });
   } else if (messages[messages.length - 1].role === "assistant") {
-    messages.push({
-      role: "user",
-      content: `[The candidate didn't give a substantive answer. Move on to your next question. Reply with the JSON object only.]`,
-    });
+    messages.push({ role: "user", content: "(no answer given) Move to the next question. Reply with the JSON only." });
   }
 
-  const text = await callInterviewer(job, messages, upcomingQuestionNumber);
-  if (!text) throw new Error("Interviewer returned an empty response");
+  const text = textOf(
+    await callClaude({
+      model: MODEL,
+      max_tokens: 1500,
+      system: interviewerPrompt(job, qNumber),
+      messages,
+    }),
+  );
 
   try {
-    return parseInterviewerJson(text, false);
-  } catch (firstErr) {
-    // Retry once with a stronger reminder
-    const retry = await callInterviewer(
-      job,
-      messages,
-      upcomingQuestionNumber,
-      `Your previous response was not valid JSON or was missing required fields. Reply with ONLY the JSON object specified by the system prompt — start with { and end with }. No prose, no fences.`,
+    return parseTurn(text);
+  } catch {
+    const retry = textOf(
+      await callClaude({
+        model: MODEL,
+        max_tokens: 1500,
+        system: interviewerPrompt(job, qNumber),
+        messages: [
+          ...messages,
+          { role: "user", content: "Reply with the JSON object only — start with { and end with }." },
+        ],
+      }),
     );
-    try {
-      return parseInterviewerJson(retry, false);
-    } catch {
-      throw firstErr;
-    }
+    return parseTurn(retry);
   }
 }
 
-export async function generateEvaluation(
-  job: Job,
-  turns: Turn[],
-): Promise<Evaluation> {
+export async function generateEvaluation(job: Job, turns: Turn[]): Promise<Evaluation> {
   const transcript = turns
-    .map((t) => {
-      const label = t.role === "interviewer" ? "Interviewer" : "Candidate";
-      return `${label}: ${t.text}`;
-    })
+    .map((t) => `${t.role === "interviewer" ? "Interviewer" : "Candidate"}: ${t.text}`)
     .join("\n\n");
 
-  const response = await createMessageWithFallback({
-    model: EVAL_MODEL,
-    max_tokens: 1000,
-    system: evaluationSystemPrompt(job),
-    messages: [
-      {
-        role: "user",
-        content: `Transcript:\n\n${transcript}\n\nReturn the JSON evaluation now.`,
-      },
-    ],
-  });
+  const text = textOf(
+    await callClaude({
+      model: EVAL_MODEL,
+      max_tokens: 1000,
+      system: evalPrompt(job),
+      messages: [{ role: "user", content: `Transcript:\n\n${transcript}\n\nReturn the JSON now.` }],
+    }),
+  );
 
-  const raw = extractText(response);
-  const cleaned = raw
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) throw new Error("Evaluator didn't return JSON");
+  const parsed = JSON.parse(text.slice(start, end + 1)) as Partial<Evaluation>;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error(`Evaluation was not valid JSON. Got: ${raw.slice(0, 200)}`);
-  }
-
-  const e = parsed as Partial<Evaluation>;
   if (
-    !Array.isArray(e.strengths) ||
-    !Array.isArray(e.concerns) ||
-    typeof e.overallScore !== "number" ||
-    typeof e.summary !== "string"
+    !Array.isArray(parsed.strengths) ||
+    !Array.isArray(parsed.concerns) ||
+    typeof parsed.overallScore !== "number" ||
+    typeof parsed.summary !== "string"
   ) {
     throw new Error("Evaluation JSON missing required fields");
   }
-
-  return {
-    strengths: e.strengths,
-    concerns: e.concerns,
-    overallScore: e.overallScore,
-    summary: e.summary,
-  };
+  return parsed as Evaluation;
 }

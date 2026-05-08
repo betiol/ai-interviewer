@@ -13,6 +13,7 @@ type SpeechRecognitionLike = {
   lang: string;
   start: () => void;
   stop: () => void;
+  abort?: () => void;
   onresult:
     | ((ev: {
         results: ArrayLike<ArrayLike<{ transcript: string }>> & { length: number };
@@ -20,6 +21,7 @@ type SpeechRecognitionLike = {
     | null;
   onerror: ((ev: { error: string }) => void) | null;
   onend: (() => void) | null;
+  onstart: (() => void) | null;
 };
 
 type Constructor = new () => SpeechRecognitionLike;
@@ -36,6 +38,7 @@ function getCtor(): Constructor | null {
 export function useSpeechRecognition({ onResult, lang = "en-US" }: Options) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const onResultRef = useRef(onResult);
 
@@ -61,25 +64,51 @@ export function useSpeechRecognition({ onResult, lang = "en-US" }: Options) {
       const text = finalText.trim();
       if (text) onResultRef.current(text);
     };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
+    rec.onerror = (ev) => {
+      console.warn("[STT] error:", ev.error);
+      setError(ev.error);
+      setListening(false);
+    };
+    rec.onstart = () => {
+      console.log("[STT] started");
+      setError(null);
+      setListening(true);
+    };
+    rec.onend = () => {
+      console.log("[STT] ended");
+      setListening(false);
+    };
     recRef.current = rec;
     return () => {
       try {
+        rec.abort?.();
         rec.stop();
       } catch {}
       recRef.current = null;
     };
   }, [lang]);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const rec = recRef.current;
-    if (!rec) return;
+    if (!rec) {
+      console.warn("[STT] no recognition instance");
+      return;
+    }
+    setError(null);
     try {
       rec.start();
-      setListening(true);
-    } catch {
-      // Already started
+    } catch (e) {
+      console.warn("[STT] start failed, aborting and retrying:", e);
+      try {
+        rec.abort?.();
+      } catch {}
+      await new Promise((r) => setTimeout(r, 200));
+      try {
+        rec.start();
+      } catch (e2) {
+        console.error("[STT] retry failed:", e2);
+        setError(e2 instanceof Error ? e2.message : "could not start");
+      }
     }
   }, []);
 
@@ -89,8 +118,7 @@ export function useSpeechRecognition({ onResult, lang = "en-US" }: Options) {
     try {
       rec.stop();
     } catch {}
-    setListening(false);
   }, []);
 
-  return { supported, listening, start, stop };
+  return { supported, listening, start, stop, error };
 }

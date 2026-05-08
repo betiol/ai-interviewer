@@ -59,6 +59,8 @@ export default function HistoryPage() {
         </div>
       ) : (
         <>
+          <AggregateStats sessions={filtered} />
+
           {roles.length > 1 && (
             <div className="mb-6 flex flex-wrap gap-2">
               <FilterPill
@@ -116,6 +118,118 @@ function FilterPill({
   );
 }
 
+function AggregateStats({ sessions }: { sessions: Session[] }) {
+  const completed = sessions.filter(
+    (s) => s.state === "completed" && typeof s.evaluation?.overallScore === "number",
+  );
+  const scoresChrono = [...completed]
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .map((s) => s.evaluation!.overallScore);
+  const avg =
+    scoresChrono.length > 0
+      ? Math.round(
+          (scoresChrono.reduce((a, b) => a + b, 0) / scoresChrono.length) * 10,
+        ) / 10
+      : null;
+
+  const totalMinutes = sessions.reduce((sum, s) => {
+    const last = s.turns[s.turns.length - 1]?.ts ?? s.startedAt;
+    return sum + Math.max(1, Math.round((last - s.startedAt) / 60000));
+  }, 0);
+
+  return (
+    <div className="mb-6 grid gap-4 sm:grid-cols-3 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
+      <Stat label="Sessions" value={sessions.length.toString()} />
+      <Stat
+        label="Avg score"
+        value={avg !== null ? `${avg}/10` : "—"}
+        accent={avg !== null ? scoreColor(avg) : undefined}
+      />
+      <div>
+        <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 mb-2">
+          Score trend
+        </p>
+        {scoresChrono.length >= 2 ? (
+          <Sparkline scores={scoresChrono} />
+        ) : (
+          <p className="text-sm text-zinc-600">
+            {scoresChrono.length === 1 ? "Need 2+ sessions" : "—"}
+          </p>
+        )}
+      </div>
+      <p className="sm:col-span-3 text-[11px] text-zinc-600 font-mono">
+        total time: {totalMinutes} min
+      </p>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-mono uppercase tracking-wider text-zinc-500 mb-1">
+        {label}
+      </p>
+      <p
+        className={`text-2xl font-mono font-semibold ${accent ?? "text-white"}`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function Sparkline({ scores }: { scores: number[] }) {
+  const W = 160;
+  const H = 32;
+  const max = 10;
+  const min = 0;
+  const stepX = scores.length > 1 ? W / (scores.length - 1) : W;
+  const points = scores.map((s, i) => {
+    const x = i * stepX;
+    const y = H - ((s - min) / (max - min)) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const last = scores[scores.length - 1];
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width={W}
+      height={H}
+      className="overflow-visible"
+      aria-label={`Score trend: ${scores.join(", ")}`}
+    >
+      <polyline
+        points={points.join(" ")}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        className={scoreColor(last)}
+      />
+      {points.map((p, i) => {
+        const [x, y] = p.split(",");
+        return (
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r={i === points.length - 1 ? 3 : 1.5}
+            className={scoreColor(scores[i]).replace("text-", "fill-")}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 function SessionRow({ session }: { session: Session }) {
   const job = getJob(session.jobId);
   const candidateTurns = session.turns.filter((t) => t.role === "candidate");
@@ -138,6 +252,16 @@ function SessionRow({ session }: { session: Session }) {
   const durationMs = lastTs - session.startedAt;
   const minutes = Math.max(1, Math.round(durationMs / 60000));
 
+  const topicSet = new Set<string>();
+  for (const t of interviewerTurns) {
+    if (t.signals?.topicsCovered) {
+      for (const topic of t.signals.topicsCovered) {
+        topicSet.add(topic.toLowerCase().trim());
+      }
+    }
+  }
+  const topicCount = topicSet.size;
+
   const score = session.evaluation?.overallScore;
 
   return (
@@ -153,7 +277,7 @@ function SessionRow({ session }: { session: Session }) {
             </h3>
             <p className="text-xs text-zinc-500">
               {new Date(session.startedAt).toLocaleString()} · {minutes} min ·{" "}
-              {session.questionCount} questions
+              {session.questionCount} questions · {topicCount} topics
             </p>
           </div>
           <div className="text-right shrink-0">

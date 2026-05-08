@@ -49,21 +49,37 @@ export async function POST(req: Request) {
     }
 
     const upcoming = askedSoFar + 1;
-    const question = await generateNextQuestion(job, working, upcoming);
+    const { question, signals } = await generateNextQuestion(
+      job,
+      working,
+      upcoming,
+    );
     const nextTurns: Turn[] = [
       ...working,
-      { role: "interviewer", text: question, ts: Date.now() },
+      { role: "interviewer", text: question, ts: Date.now(), signals },
     ];
     return NextResponse.json({
       question,
+      signals,
       questionNumber: upcoming,
       totalQuestions: TARGET_QUESTIONS,
       turns: nextTurns,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Interviewer failed" },
-      { status: 500 },
-    );
+    const raw = err instanceof Error ? err.message : String(err);
+    let message = "The interviewer ran into an error. Please try again.";
+    let status = 500;
+    if (/overloaded|529/i.test(raw)) {
+      message =
+        "The model is overloaded right now. Wait a few seconds and try again.";
+      status = 503;
+    } else if (/rate[_ ]?limit|429/i.test(raw)) {
+      message = "Rate limit hit — please wait a moment and try again.";
+      status = 429;
+    } else if (/api[_ ]?key|unauthorized|401/i.test(raw)) {
+      message = "Server is missing or has an invalid API key.";
+      status = 500;
+    }
+    return NextResponse.json({ error: message, detail: raw }, { status });
   }
 }

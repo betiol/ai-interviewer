@@ -7,13 +7,6 @@ export default function Home() {
       <div className="flex-1 px-6 sm:px-10 lg:px-20 py-14 lg:py-24 max-w-6xl w-full mx-auto">
         {/* HERO */}
         <header className="mb-20 lg:mb-28">
-          <div className="flex items-center gap-3 mb-8 text-[11px] font-mono uppercase tracking-[0.18em] text-zinc-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-            <span>System ready</span>
-            <span className="text-zinc-700">/</span>
-            <span>v0.1.0</span>
-          </div>
-
           <h1 className="font-semibold text-white tracking-tight leading-[0.95] mb-8">
             <span className="block text-[15vw] sm:text-[88px] lg:text-[120px]">
               Interview

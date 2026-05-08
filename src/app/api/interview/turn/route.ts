@@ -77,7 +77,8 @@ export async function POST(req: Request) {
       message = "Rate limit hit — please wait a moment and try again.";
       status = 429;
     } else if (/api[_ ]?key|unauthorized|401/i.test(raw)) {
-      message = "Server is missing or has an invalid API key.";
+      message =
+        "Server is missing or has an invalid API key. Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY.";
       status = 500;
     }
     return NextResponse.json({ error: message, detail: raw }, { status });

@@ -1,21 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { Job, Turn, Evaluation, InterviewerSignals } from "./types";
-
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
-const FALLBACK_MODEL = process.env.ANTHROPIC_FALLBACK_MODEL ?? "claude-haiku-4-5";
-const EVAL_MODEL = process.env.ANTHROPIC_EVAL_MODEL ?? MODEL;
+import { callLLM, EVAL_MODEL } from "./llm";
 
 export const TARGET_QUESTIONS = 6;
 const FORCED_FOLLOWUPS = new Set([3, 5]);
-
-let _client: Anthropic | null = null;
-function client() {
-  if (!_client) {
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
-    _client = new Anthropic();
-  }
-  return _client;
-}
 
 function interviewerPrompt(job: Job, qNumber: number) {
   const isFollowup = FORCED_FOLLOWUPS.has(qNumber);
@@ -79,21 +66,13 @@ Reply with a single JSON object, no fences:
 Be honest. If answers were thin, say so and score 3-5.`;
 }
 
-function turnsToMessages(turns: Turn[]): Anthropic.MessageParam[] {
+function turnsToMessages(turns: Turn[]) {
   return turns
     .filter((t) => t.text?.trim())
     .map((t) => ({
       role: t.role === "interviewer" ? ("assistant" as const) : ("user" as const),
       content: t.text.trim(),
     }));
-}
-
-function textOf(msg: Anthropic.Message) {
-  return msg.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
 }
 
 const EMPTY_SIGNALS: InterviewerSignals = {
@@ -135,22 +114,6 @@ function parseTurn(raw: string) {
   };
 }
 
-function isOverloaded(err: unknown) {
-  if (err instanceof Anthropic.APIError) {
-    return [429, 503, 529].includes(err.status ?? 0);
-  }
-  return /overloaded|529|rate[_ ]?limit/i.test(String(err));
-}
-
-async function callClaude(args: Anthropic.MessageCreateParamsNonStreaming) {
-  try {
-    return await client().messages.create(args);
-  } catch (err) {
-    if (!isOverloaded(err) || args.model === FALLBACK_MODEL) throw err;
-    return await client().messages.create({ ...args, model: FALLBACK_MODEL });
-  }
-}
-
 export async function generateNextQuestion(
   job: Job,
   turns: Turn[],
@@ -165,29 +128,23 @@ export async function generateNextQuestion(
 
   const system = interviewerPrompt(job, qNumber);
 
-  const text = textOf(
-    await callClaude({
-      model: MODEL,
-      max_tokens: 1500,
-      system,
-      messages,
-    }),
-  );
+  const text = await callLLM({
+    system,
+    messages,
+    maxTokens: 1500,
+  });
 
   try {
     return parseTurn(text);
   } catch {
-    const retry = textOf(
-      await callClaude({
-        model: MODEL,
-        max_tokens: 1500,
-        system,
-        messages: [
-          ...messages,
-          { role: "user", content: "Reply with the JSON object only — start with { and end with }." },
-        ],
-      }),
-    );
+    const retry = await callLLM({
+      system,
+      messages: [
+        ...messages,
+        { role: "user", content: "Reply with the JSON object only — start with { and end with }." },
+      ],
+      maxTokens: 1500,
+    });
     return parseTurn(retry);
   }
 }
@@ -197,14 +154,14 @@ export async function generateEvaluation(job: Job, turns: Turn[]): Promise<Evalu
     .map((t) => `${t.role === "interviewer" ? "Interviewer" : "Candidate"}: ${t.text}`)
     .join("\n\n");
 
-  const text = textOf(
-    await callClaude({
-      model: EVAL_MODEL,
-      max_tokens: 1000,
-      system: evalPrompt(job),
-      messages: [{ role: "user", content: `Transcript:\n\n${transcript}\n\nReturn the JSON now.` }],
-    }),
-  );
+  const text = await callLLM({
+    model: EVAL_MODEL,
+    system: evalPrompt(job),
+    messages: [
+      { role: "user", content: `Transcript:\n\n${transcript}\n\nReturn the JSON now.` },
+    ],
+    maxTokens: 1000,
+  });
 
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");

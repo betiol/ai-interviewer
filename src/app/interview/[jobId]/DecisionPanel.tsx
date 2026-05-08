@@ -59,6 +59,17 @@ export default function DecisionPanel({ turns }: Props) {
         </p>
       ) : (
         <div className="space-y-5">
+          {signals.pickedFromPack && (
+            <Section
+              label={`From pack · ${signals.pickedFromPack.category}`}
+              accent="text-violet-400"
+            >
+              <p className="text-zinc-400 leading-relaxed text-[12px] italic">
+                &ldquo;{signals.pickedFromPack.question}&rdquo;
+              </p>
+            </Section>
+          )}
+
           {signals.rationale && (
             <Section
               label="Why this question"

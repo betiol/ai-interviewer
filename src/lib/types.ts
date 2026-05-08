@@ -1,3 +1,8 @@
+export type QuestionPack = {
+  behavioral: string[];
+  technical: string[];
+};
+
 export type Job = {
   id: string;
   title: string;
@@ -5,6 +10,7 @@ export type Job = {
   longDescription: string;
   focusAreas: string[];
   estimatedMinutes: string;
+  questionPack: QuestionPack;
 };
 
 export type InterviewerSignals = {
@@ -12,6 +18,7 @@ export type InterviewerSignals = {
   topicsCovered: string[];
   gaps: string[];
   rationale: string;
+  pickedFromPack?: { category: "behavioral" | "technical"; question: string };
 };
 
 export type Turn = {

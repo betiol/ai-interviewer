@@ -18,9 +18,10 @@ function client() {
 }
 
 function interviewerPrompt(job: Job, qNumber: number) {
-  const followup = FORCED_FOLLOWUPS.has(qNumber)
-    ? `This question MUST be a follow-up — quote a phrase from the candidate's last answer and dig into it. Do not change topics.`
-    : `This question can introduce a new topic. Move forward, don't repeat ground.`;
+  const isFollowup = FORCED_FOLLOWUPS.has(qNumber);
+  const followup = isFollowup
+    ? `This question MUST be a follow-up — quote a phrase from the candidate's last answer and dig into it. Do not change topics. Do not pull from the question pack.`
+    : `This question introduces a new topic. Prefer drawing from the question pack below; you may rephrase or sharpen, but don't ignore the pack unless nothing in it fits the unexplored ground. Don't repeat topics already covered.`;
 
   return `You are conducting a live job interview for: "${job.title}".
 
@@ -28,6 +29,18 @@ Focus areas:
 ${job.focusAreas.map((f) => `- ${f}`).join("\n")}
 
 Context: ${job.longDescription}
+
+# Question pack (curated for this role)
+
+Behavioral:
+${job.questionPack.behavioral.map((q) => `- ${q}`).join("\n")}
+
+Technical:
+${job.questionPack.technical.map((q) => `- ${q}`).join("\n")}
+
+Aim for a rough behavioral / technical balance across the 6 questions. Don't ask the same one twice.
+
+# Output
 
 Question ${qNumber} of ${TARGET_QUESTIONS}.
 
@@ -38,7 +51,8 @@ Reply with a single JSON object, no prose around it, no fences:
     "skillsDemonstrated": ["..."],
     "topicsCovered": ["..."],
     "gaps": ["..."],
-    "rationale": "1-2 sentences on why you chose this question"
+    "rationale": "1-2 sentences on why you chose this question",
+    "pickedFromPack": { "category": "behavioral" | "technical", "question": "the verbatim pack question you drew from" } // omit this field if the question is a generated follow-up or if you didn't pull from the pack
   }
 }
 
@@ -46,7 +60,7 @@ Rules for the question:
 - You ARE the interviewer talking to the candidate. Don't say "the interview", "the candidate", or "would you like".
 - One question only. 1-3 sentences. Conversational.
 - ${followup}
-- The first question is a meaty role-specific opener, not "tell me about yourself".`;
+- The first question is a meaty role-specific opener.`;
 }
 
 function evalPrompt(job: Job) {
@@ -100,9 +114,22 @@ function parseTurn(raw: string) {
   if (typeof parsed.question !== "string" || !parsed.question.trim()) {
     throw new Error("Missing 'question' in interviewer response");
   }
+  const incoming = parsed.signals ?? {};
+  const picked = incoming.pickedFromPack;
+  const validPick =
+    picked &&
+    typeof picked === "object" &&
+    typeof picked.question === "string" &&
+    (picked.category === "behavioral" || picked.category === "technical")
+      ? picked
+      : undefined;
   return {
     question: parsed.question.trim(),
-    signals: { ...EMPTY_SIGNALS, ...(parsed.signals ?? {}) },
+    signals: {
+      ...EMPTY_SIGNALS,
+      ...incoming,
+      pickedFromPack: validPick,
+    },
   };
 }
 

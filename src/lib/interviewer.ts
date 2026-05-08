@@ -8,9 +8,9 @@ function interviewerPrompt(job: Job, qNumber: number) {
   const isFollowup = FORCED_FOLLOWUPS.has(qNumber);
   const followup = isFollowup
     ? `This question MUST be a follow-up — quote a phrase from the candidate's last answer and dig into it. Do not change topics. Do not pull from the question pack.`
-    : `This question introduces a new topic. Prefer drawing from the question pack below; you may rephrase or sharpen, but don't ignore the pack unless nothing in it fits the unexplored ground. Don't repeat topics already covered.
+    : `This question MUST introduce a new topic. Pull from the question pack below — pick whichever pack question best covers ground we haven't touched yet. You may rephrase or sharpen, but the topic itself is new. Don't repeat any topic already in topicsCovered.
 
-Important: if the candidate's previous answer was clearly thin or unconfident — for example they said they didn't know, gave a one-liner, or were off-topic — don't move on. Re-approach the same area from a different angle (a more specific version, an easier framing, or "what would you consider if you had to make a call"). Treat moving to a brand-new pack question as wasteful when the prior topic wasn't actually engaged with.`;
+The ONLY exception: if the candidate explicitly punted on the previous question — they literally said "I don't know" / "skip" / "no idea" / "pass", OR gave zero substantive content (under 5 words and no claim) — then re-approach that same area from an easier angle instead of moving on. Otherwise, even if the previous answer was brief, MOVE ON to a new pack question.`;
 
   return `You are conducting a live job interview for: "${job.title}".
 

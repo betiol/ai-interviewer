@@ -24,8 +24,8 @@ export default function EvaluationView({ evaluation }: Props) {
         </div>
         <div className="text-right shrink-0">
           <p className="text-xs text-zinc-500">Score</p>
-          <p className={`text-4xl font-mono font-semibold ${scoreColor(evaluation.overall_score)}`}>
-            {evaluation.overall_score}
+          <p className={`text-4xl font-mono font-semibold ${scoreColor(evaluation.overallScore)}`}>
+            {evaluation.overallScore}
             <span className="text-lg text-zinc-600">/10</span>
           </p>
         </div>

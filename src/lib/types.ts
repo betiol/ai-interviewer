@@ -4,18 +4,27 @@ export type Job = {
   shortDescription: string;
   longDescription: string;
   focusAreas: string[];
+  estimatedMinutes: string;
+};
+
+export type InterviewerSignals = {
+  skillsDemonstrated: string[];
+  topicsCovered: string[];
+  gaps: string[];
+  rationale: string;
 };
 
 export type Turn = {
   role: "interviewer" | "candidate";
   text: string;
   ts: number;
+  signals?: InterviewerSignals;
 };
 
 export type Evaluation = {
   strengths: string[];
   concerns: string[];
-  overall_score: number;
+  overallScore: number;
   summary: string;
 };
 

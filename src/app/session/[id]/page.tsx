@@ -101,6 +101,16 @@ export default function SessionPage({
               >
                 {t.text}
               </p>
+              {t.signals?.rationale && (
+                <details className="mt-3">
+                  <summary className="text-[11px] uppercase tracking-wider text-sky-500 cursor-pointer hover:text-sky-300">
+                    Why this question
+                  </summary>
+                  <p className="mt-2 text-xs text-zinc-400 leading-relaxed italic">
+                    {t.signals.rationale}
+                  </p>
+                </details>
+              )}
             </div>
           ))}
         </div>

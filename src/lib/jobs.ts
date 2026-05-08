@@ -14,6 +14,7 @@ export const JOBS: Job[] = [
       "Production debugging and observability",
       "Trade-off thinking under ambiguity",
     ],
+    estimatedMinutes: "10-15 min",
   },
   {
     id: "ml-platform-engineer",
@@ -28,6 +29,7 @@ export const JOBS: Job[] = [
       "Cost and latency optimization",
       "Working across research and engineering",
     ],
+    estimatedMinutes: "10-15 min",
   },
   {
     id: "founding-product-engineer",
@@ -42,6 +44,7 @@ export const JOBS: Job[] = [
       "Pragmatic technical decisions",
       "Working without specs",
     ],
+    estimatedMinutes: "10-15 min",
   },
 ];
 

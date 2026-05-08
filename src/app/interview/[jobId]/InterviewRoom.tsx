@@ -6,8 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import type { Job, Session, Turn } from "@/lib/types";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 import { useTextToSpeech } from "@/lib/useTextToSpeech";
+import { useCamera } from "@/lib/useCamera";
 import { newSessionId, saveSession } from "@/lib/sessionStore";
 import DecisionPanel from "./DecisionPanel";
+import VideoStage from "./VideoStage";
 
 type Props = { job: Job };
 
@@ -31,6 +33,8 @@ export default function InterviewRoom({ job }: Props) {
 
   const tts = useTextToSpeech();
   const lastSpokenRef = useRef<string>("");
+
+  const camera = useCamera();
 
   const startedRef = useRef(false);
   useEffect(() => {
@@ -57,8 +61,6 @@ export default function InterviewRoom({ job }: Props) {
     });
   }
 
-  // If a turn fails, we keep the answer around so the user can retry without
-  // having to re-speak it.
   const [lastFailedAnswer, setLastFailedAnswer] = useState<string | undefined>(
     undefined,
   );
@@ -172,6 +174,14 @@ export default function InterviewRoom({ job }: Props) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0">
+
+      <VideoStage
+        videoRef={camera.videoRef}
+        cameraEnabled={camera.enabled}
+        cameraError={camera.error}
+        onToggleCamera={() => (camera.enabled ? camera.stop() : camera.start())}
+        interviewerSpeaking={tts.speaking}
+      />
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 mb-6 min-h-[120px]">
         <div className="flex items-center justify-between mb-2">

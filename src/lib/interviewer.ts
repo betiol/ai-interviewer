@@ -82,7 +82,7 @@ const EMPTY_SIGNALS: InterviewerSignals = {
   rationale: "",
 };
 
-function parseTurn(raw: string) {
+export function parseTurn(raw: string) {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   if (start === -1 || end <= start) {

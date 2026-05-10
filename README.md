@@ -2,8 +2,6 @@
 
 A lightweight web app where you pick a job and run a voice-driven interview with an AI interviewer. The interviewer adapts every question to your previous answer, keeps live track of which skills you've shown vs. which gaps remain, reads its questions out loud, and produces a structured evaluation at the end.
 
-Built for the AfterQuery LatAM take-home. Target time was 4 hours; this is what fit in that window — including all four stretch goals.
-
 
 ---
 

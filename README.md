@@ -79,7 +79,7 @@ A `/history` page that lists all past sessions stored in `localStorage` with:
 
 ```bash
 git clone <this-repo>
-cd aq-latam-take-home
+cd ai-interviewer
 npm install
 
 # create a .env.local file with your Anthropic key
